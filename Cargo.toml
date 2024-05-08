@@ -1,0 +1,7 @@
+bin = [
+]
+
+[package]
+name = "adventofcode2023"
+edition = "2021"
+publish = false
