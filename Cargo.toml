@@ -3,6 +3,8 @@ bin = [
   { name = "day01-2", path = "day01/ex2.rs" },
   { name = "day02-1", path = "day02/ex1.rs" },
   { name = "day02-2", path = "day02/ex2.rs" },
+  { name = "day03-1", path = "day03/ex1.rs" },
+  { name = "day03-2", path = "day03/ex2.rs" },
 ]
 
 [package]
