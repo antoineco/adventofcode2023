@@ -15,7 +15,8 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-struct SeedRange(u64, usize); // seed, range_len
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone)]
+struct Range(u64, u64); // [rng_start, rng_end)
 
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
 struct MapRange(u64, u64, usize); // src_start, dst_start, range_len
@@ -24,7 +25,7 @@ struct MapRange(u64, u64, usize); // src_start, dst_start, range_len
 //    cannot define inherent `impl` for a type outside of the crate where the type is defined
 trait Mapper {
     fn new() -> Self;
-    fn map(&self, src: u64) -> u64;
+    fn map(&self, input: Vec<Range>) -> Vec<Range>;
 }
 
 type MapRanges = Vec<MapRange>;
@@ -35,16 +36,64 @@ impl Mapper for MapRanges {
         Vec::with_capacity(MAX_MAP_SIZE)
     }
 
-    fn map(&self, src: u64) -> u64 {
+    fn map(&self, mut input: Vec<Range>) -> Vec<Range> {
+        let mut transformed_rngs = Vec::with_capacity(input.len() * 2); // empirical cap value
         for mr in self {
-            if src < mr.0 {
-                // src is between two ranges. Ranges are sorted and do not overlap.
-                return src;
-            } else if src <= mr.0 + (mr.2 - 1) as u64 {
-                return mr.1 + (src - mr.0);
+            if input.is_empty() {
+                break;
             }
+            // worst case: before+after ranges for each input
+            let mut next_rngs = Vec::with_capacity(2 * input.len());
+            while let Some(i) = input.pop() {
+                /* Possible cases:
+                 *
+                 * mr.src range fully contained inside i range
+                 *     [i_start                                            i_end]
+                 *                       [src_start      src_end]
+                 *     [BEFORE          ][INTER                 ][AFTER         ]
+                 *
+                 * mr.src range overlaps i range on one side
+                 *               [i_start                                  i_end]
+                 *     [src_start      src_end]
+                 *              x[INTER       ][AFTER                           ]
+                 *
+                 * mr.src range fully contains i range
+                 *                       [i_start          i_end]
+                 *     [src_start                                        src_end]
+                 *                      x[INTER                 ]x
+                 *
+                 * mr.src range and i range do not overlap
+                 *     [i_start        i_end]
+                 *                              [src_start               src_end]
+                 *     [BEFORE              ]x
+                 *
+                 * Inter ranges are shifted and returned as input for the next Mapper.
+                 *
+                 * Before/after ranges are either:
+                 *   - tried against the next range in the current Mapper.
+                 *   - returned as input for the next Mapper, if no more range is to be tried in
+                 *     the current one (no map = same dest per puzzle description).
+                 */
+
+                // In all of the cases below, the range is considered empty if start >= end.
+                let before = Range(i.0, i.1.min(mr.0));
+                let inter = Range(i.0.max(mr.0), i.1.min(mr.0 + mr.2 as u64));
+                let after = Range(i.0.max(mr.0 + mr.2 as u64), i.1);
+
+                if before.1 > before.0 {
+                    next_rngs.push(before);
+                }
+                if inter.1 > inter.0 {
+                    // shifted inner range
+                    transformed_rngs.push(Range(mr.1 + (inter.0 - mr.0), mr.1 + (inter.1 - mr.0)));
+                }
+                if after.1 > after.0 {
+                    next_rngs.push(after);
+                }
+            }
+            input = next_rngs; // reuse outer variable as input for the next range
         }
-        src
+        [transformed_rngs, input].concat()
     }
 }
 
@@ -68,7 +117,7 @@ fn lowest<R: io::Read>(r: R) -> u64 {
                     }
                 } else {
                     match seed_str.parse::<usize>() {
-                        Ok(v) => seed_rngs.push(SeedRange(seed, v)),
+                        Ok(v) => seed_rngs.push(Range(seed, seed + v as u64)),
                         Err(e) => panic!("{e}"),
                     };
                     seed = u64::MAX;
@@ -79,7 +128,7 @@ fn lowest<R: io::Read>(r: R) -> u64 {
             seed_str.push(c);
         }
         match seed_str.parse::<usize>() {
-            Ok(v) => seed_rngs.push(SeedRange(seed, v)),
+            Ok(v) => seed_rngs.push(Range(seed, seed + v as u64)),
             Err(e) => panic!("{e}"),
         };
     }
@@ -137,14 +186,15 @@ fn lowest<R: io::Read>(r: R) -> u64 {
     }
     maps[cur_map].sort();
 
-    // TODO: optimize runtime, ran in 3m0s
     seed_rngs
         .iter()
         .map(|r| {
-            (r.0..(r.0 + r.1 as u64))
-                .map(|s| maps.iter().fold(s, |acc, e| e.map(acc)))
+            maps.iter()
+                .fold(vec![r.clone()], |acc, e| e.map(acc))
+                .iter()
                 .min()
-                .unwrap_or_default()
+                .unwrap()
+                .0
         })
         .min()
         .unwrap_or_default()
