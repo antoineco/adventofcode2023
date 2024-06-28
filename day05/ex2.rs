@@ -45,7 +45,10 @@ impl Mapper for MapRanges {
             // worst case: before+after ranges for each input
             let mut next_rngs = Vec::with_capacity(2 * input.len());
             while let Some(i) = input.pop() {
-                /* Possible cases:
+                /* Visualization of ranges:
+                 * https://www.reddit.com/r/adventofcode/comments/18b82w0/2023_day_5_part_2_visualizing_all_the_mapping/
+                 *
+                 * Possible cases:
                  *
                  * mr.src range fully contained inside i range
                  *     [i_start                                            i_end]
